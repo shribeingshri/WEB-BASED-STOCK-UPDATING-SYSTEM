@@ -12,17 +12,20 @@ const app = express();
 app.use(
   helmet({
     hsts: env.isProduction,
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", 'https://cdn.jsdelivr.net', 'https://unpkg.com'],
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-        fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-        imgSrc: ["'self'", 'data:', 'blob:'],
-        connectSrc: ["'self'", 'ws:', 'wss:'],
-        upgradeInsecureRequests: env.isProduction ? [] : null,
-      },
-    },
+    crossOriginOpenerPolicy: env.isProduction,
+    crossOriginResourcePolicy: env.isProduction ? { policy: 'same-origin' } : false,
+    contentSecurityPolicy: env.isProduction
+      ? {
+          directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", 'https://cdn.jsdelivr.net', 'https://unpkg.com'],
+            styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+            fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+            imgSrc: ["'self'", 'data:', 'blob:'],
+            connectSrc: ["'self'", 'ws:', 'wss:'],
+          },
+        }
+      : false,
   })
 );
 
