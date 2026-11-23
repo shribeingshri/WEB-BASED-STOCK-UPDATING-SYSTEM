@@ -107,3 +107,4 @@ A production-grade, full-stack inventory and stock updating platform built for *
 2. Deploy the Node.js application to Render, Railway, or a Linux VPS behind Nginx with HTTPS enabled.
 3. Set `NODE_ENV=production`, `COOKIE_SECURE=true`, `CLIENT_ORIGIN=https://your-domain.com`, and a 32+ character `JWT_SECRET`.
 4. Schedule automated daily `mysqldump` backups of `buildmore_inventory`.
+

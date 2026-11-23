@@ -23,3 +23,4 @@ const lowStock = asyncHandler(async (req, res) => {
 });
 
 module.exports = { summary, stockMovement, recentTransactions, lowStock };
+

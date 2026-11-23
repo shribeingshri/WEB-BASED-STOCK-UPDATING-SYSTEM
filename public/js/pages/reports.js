@@ -120,3 +120,4 @@
 
   App.registerPage('reports', render);
 })();
+

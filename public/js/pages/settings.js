@@ -180,3 +180,4 @@
 
   App.registerPage('settings', render);
 })();
+

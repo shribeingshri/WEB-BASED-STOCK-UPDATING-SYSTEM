@@ -18,3 +18,4 @@ function requireRole(...allowedRoles) {
 }
 
 module.exports = { requireRole };
+

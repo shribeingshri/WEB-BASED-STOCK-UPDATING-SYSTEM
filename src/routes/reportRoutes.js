@@ -14,3 +14,4 @@ router.get('/low-stock', reportController.getReport('low-stock'));
 router.get('/movements', reportController.getReport('movements'));
 
 module.exports = router;
+

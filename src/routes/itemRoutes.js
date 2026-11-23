@@ -18,3 +18,4 @@ router.put('/:id', requireRole('ADMIN'), itemController.update);
 router.delete('/:id', requireRole('ADMIN'), itemController.remove);
 
 module.exports = router;
+

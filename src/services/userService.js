@@ -1,10 +1,23 @@
 const bcrypt = require('bcrypt');
-const { pool } = require('../config/db');
+const { pool, isDemoMode } = require('../config/db');
+const { store } = require('../config/demoStore');
 const env = require('../config/env');
 const ApiError = require('../utils/ApiError');
 const { logAudit } = require('./auditService');
 
 async function listUsers({ search = '', role = '', status = '' }) {
+  if (isDemoMode()) {
+    const q = search.trim().toLowerCase();
+    return store.users
+      .filter((u) => {
+        if (q && !u.name.toLowerCase().includes(q) && !u.username.toLowerCase().includes(q) && !u.email.toLowerCase().includes(q)) return false;
+        if (role && u.role !== role) return false;
+        if (status && u.status !== status) return false;
+        return true;
+      })
+      .map(({ password_hash: _, ...safe }) => safe);
+  }
+
   let where = 'WHERE 1=1';
   const params = [];
 
@@ -43,6 +56,37 @@ async function createUser({ name, username, email, password, role = 'STAFF' }, a
 
   const cleanEmail = email.trim().toLowerCase();
   const cleanUsername = username.trim().toLowerCase();
+  const passwordHash = await bcrypt.hash(password, env.bcryptRounds);
+
+  if (isDemoMode()) {
+    if (store.users.some((u) => u.email.toLowerCase() === cleanEmail || u.username.toLowerCase() === cleanUsername)) {
+      throw new ApiError(409, 'A user with this email or username already exists.');
+    }
+    const now = new Date().toISOString();
+    const newUser = {
+      id: store.seq.users++,
+      name: name.trim(),
+      username: cleanUsername,
+      email: cleanEmail,
+      password_hash: passwordHash,
+      role,
+      status: 'ACTIVE',
+      last_login: null,
+      created_at: now,
+      updated_at: now,
+    };
+    store.users.unshift(newUser);
+    await logAudit({
+      userId: actor.id,
+      action: 'CREATE_USER',
+      entityType: 'USER',
+      entityId: newUser.id,
+      description: `Created user ${cleanUsername} with role ${role}.`,
+      ipAddress,
+    });
+    const { password_hash: _, ...safe } = newUser;
+    return safe;
+  }
 
   const [existing] = await pool.query(
     'SELECT id FROM users WHERE LOWER(email) = ? OR LOWER(username) = ? LIMIT 1',
@@ -52,7 +96,6 @@ async function createUser({ name, username, email, password, role = 'STAFF' }, a
     throw new ApiError(409, 'A user with this email or username already exists.');
   }
 
-  const passwordHash = await bcrypt.hash(password, env.bcryptRounds);
   const [result] = await pool.query(
     `INSERT INTO users (name, username, email, password_hash, role, status)
      VALUES (?, ?, ?, ?, ?, 'ACTIVE')`,
@@ -76,13 +119,39 @@ async function createUser({ name, username, email, password, role = 'STAFF' }, a
 }
 
 async function updateUser(id, { name, email, role, password }, actor, ipAddress) {
+  if (role && !['ADMIN', 'STAFF'].includes(role)) {
+    throw new ApiError(400, 'Role must be ADMIN or STAFF.');
+  }
+  if (role && Number(id) === actor.id && role !== 'ADMIN') {
+    throw new ApiError(400, 'You cannot demote your own admin account.');
+  }
+  if (password && String(password).length < 6) {
+    throw new ApiError(400, 'Password must be at least 6 characters.');
+  }
+
+  if (isDemoMode()) {
+    const user = store.users.find((u) => u.id === Number(id));
+    if (!user) throw new ApiError(404, 'User not found.');
+    if (name) user.name = name.trim();
+    if (email) user.email = email.trim().toLowerCase();
+    if (role) user.role = role;
+    if (password) user.password_hash = await bcrypt.hash(password, env.bcryptRounds);
+    user.updated_at = new Date().toISOString();
+    await logAudit({
+      userId: actor.id,
+      action: 'UPDATE_USER',
+      entityType: 'USER',
+      entityId: id,
+      description: `Updated user #${id}${password ? ' (including password reset)' : ''}.`,
+      ipAddress,
+    });
+    const { password_hash: _, ...safe } = user;
+    return safe;
+  }
+
   const [rows] = await pool.query('SELECT * FROM users WHERE id = ? LIMIT 1', [id]);
   if (!rows[0]) {
     throw new ApiError(404, 'User not found.');
-  }
-
-  if (role && !['ADMIN', 'STAFF'].includes(role)) {
-    throw new ApiError(400, 'Role must be ADMIN or STAFF.');
   }
 
   const updates = [];
@@ -97,16 +166,10 @@ async function updateUser(id, { name, email, role, password }, actor, ipAddress)
     params.push(email.trim().toLowerCase());
   }
   if (role) {
-    if (Number(id) === actor.id && role !== 'ADMIN') {
-      throw new ApiError(400, 'You cannot demote your own admin account.');
-    }
     updates.push('role = ?');
     params.push(role);
   }
   if (password) {
-    if (String(password).length < 6) {
-      throw new ApiError(400, 'Password must be at least 6 characters.');
-    }
     const passwordHash = await bcrypt.hash(password, env.bcryptRounds);
     updates.push('password_hash = ?');
     params.push(passwordHash);
@@ -143,9 +206,16 @@ async function updateUserStatus(id, status, actor, ipAddress) {
     throw new ApiError(400, 'You cannot deactivate your own account.');
   }
 
-  const [result] = await pool.query('UPDATE users SET status = ? WHERE id = ?', [status, id]);
-  if (result.affectedRows === 0) {
-    throw new ApiError(404, 'User not found.');
+  if (isDemoMode()) {
+    const user = store.users.find((u) => u.id === Number(id));
+    if (!user) throw new ApiError(404, 'User not found.');
+    user.status = status;
+    user.updated_at = new Date().toISOString();
+  } else {
+    const [result] = await pool.query('UPDATE users SET status = ? WHERE id = ?', [status, id]);
+    if (result.affectedRows === 0) {
+      throw new ApiError(404, 'User not found.');
+    }
   }
 
   await logAudit({

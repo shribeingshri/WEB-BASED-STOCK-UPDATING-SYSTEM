@@ -13,3 +13,4 @@ router.put('/:id', requireRole('ADMIN'), categoryController.update);
 router.delete('/:id', requireRole('ADMIN'), categoryController.remove);
 
 module.exports = router;
+

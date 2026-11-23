@@ -13,3 +13,4 @@ router.put('/:id', userController.update);
 router.patch('/:id/status', userController.updateStatus);
 
 module.exports = router;
+

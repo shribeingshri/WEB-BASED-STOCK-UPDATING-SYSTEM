@@ -22,3 +22,4 @@ INSERT IGNORE INTO `suppliers` (`name`, `contact_person`, `phone`, `email`, `add
   ('Apex Building Materials Pvt Ltd', 'Rajesh Kumar', '+91-98450-11223', 'sales@apexmaterials.in', 'Peenya Industrial Area, Bengaluru'),
   ('Metro Steel & Hardware', 'Suresh Nair', '+91-98801-44556', 'orders@metrosteel.in', 'SP Road, Bengaluru'),
   ('Kaveri Pipes & Fittings', 'Anita Desai', '+91-97412-77889', 'dispatch@kaveripipes.in', 'Bommasandra, Bengaluru');
+

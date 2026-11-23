@@ -155,3 +155,4 @@
 
   App.registerPage('transactions', render);
 })();
+

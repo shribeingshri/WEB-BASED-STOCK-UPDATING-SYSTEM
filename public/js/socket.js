@@ -34,3 +34,4 @@ window.AppSocket = (() => {
 
   return { connect };
 })();
+

@@ -54,3 +54,4 @@ const getReport = (reportType) =>
   });
 
 module.exports = { getReport };
+

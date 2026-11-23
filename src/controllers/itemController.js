@@ -49,3 +49,4 @@ const remove = asyncHandler(async (req, res) => {
 });
 
 module.exports = { list, getById, getQrCode, create, update, remove };
+

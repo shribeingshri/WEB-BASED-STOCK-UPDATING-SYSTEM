@@ -22,3 +22,4 @@ const getAuditLogs = asyncHandler(async (req, res) => {
 });
 
 module.exports = { getSettings, updateSettings, getAuditLogs };
+

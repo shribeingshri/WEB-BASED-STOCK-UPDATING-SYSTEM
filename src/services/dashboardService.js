@@ -1,6 +1,49 @@
-const { pool } = require('../config/db');
+const { pool, isDemoMode } = require('../config/db');
+const { store } = require('../config/demoStore');
 
 async function getDashboardSummary() {
+  if (isDemoMode()) {
+    const activeItems = store.items.filter((i) => i.status === 'ACTIVE');
+    const today = new Date().toISOString().slice(0, 10);
+
+    const totalProducts = activeItems.length;
+    const totalStockQuantity = activeItems.reduce((s, i) => s + Number(i.current_quantity), 0);
+    const valuedItems = activeItems.filter((i) => i.unit_cost !== null && i.unit_cost !== undefined);
+    const totalInventoryValue = valuedItems.reduce((s, i) => s + Number(i.current_quantity) * Number(i.unit_cost), 0);
+    const lowStockItems = activeItems.filter((i) => i.current_quantity > 0 && i.current_quantity <= i.minimum_stock_level).length;
+    const outOfStockItems = activeItems.filter((i) => i.current_quantity <= 0).length;
+    const inStockItems = activeItems.filter((i) => i.current_quantity > i.minimum_stock_level).length;
+
+    const todayTx = store.stock_transactions.filter((t) => t.created_at.slice(0, 10) === today);
+    const stockInToday = todayTx.filter((t) => t.transaction_type === 'IN');
+    const stockOutToday = todayTx.filter((t) => t.transaction_type === 'OUT');
+
+    const categoryDistribution = store.categories.map((c) => {
+      const catItems = activeItems.filter((i) => i.category_id === c.id);
+      return {
+        id: c.id,
+        name: c.name,
+        item_count: catItems.length,
+        total_quantity: catItems.reduce((s, i) => s + Number(i.current_quantity), 0),
+      };
+    }).sort((a, b) => b.total_quantity - a.total_quantity || a.name.localeCompare(b.name));
+
+    return {
+      totalProducts,
+      totalStockQuantity,
+      totalInventoryValue,
+      valuedItemsCount: valuedItems.length,
+      lowStockItems,
+      outOfStockItems,
+      inStockItems,
+      stockInTodayCount: stockInToday.length,
+      stockInTodayQty: stockInToday.reduce((s, t) => s + Number(t.quantity), 0),
+      stockOutTodayCount: stockOutToday.length,
+      stockOutTodayQty: stockOutToday.reduce((s, t) => s + Number(t.quantity), 0),
+      categoryDistribution,
+    };
+  }
+
   const [itemStats] = await pool.query(`
     SELECT
       COUNT(*) AS totalProducts,
@@ -42,6 +85,31 @@ async function getDashboardSummary() {
 }
 
 async function getStockMovement(period = 'daily') {
+  if (isDemoMode()) {
+    const groups = new Map();
+    for (const t of store.stock_transactions) {
+      const d = new Date(t.created_at);
+      let label;
+      if (period === 'monthly') {
+        label = t.created_at.slice(0, 7);
+      } else if (period === 'weekly') {
+        const start = new Date(d.getFullYear(), 0, 1);
+        const week = Math.ceil(((d - start) / 86400000 + start.getDay() + 1) / 7);
+        label = `${d.getFullYear()}-W${String(week).padStart(2, '0')}`;
+      } else {
+        label = t.created_at.slice(0, 10);
+      }
+
+      if (!groups.has(label)) {
+        groups.set(label, { period_label: label, stock_in: 0, stock_out: 0 });
+      }
+      const entry = groups.get(label);
+      if (t.transaction_type === 'IN') entry.stock_in += Number(t.quantity);
+      if (t.transaction_type === 'OUT') entry.stock_out += Number(t.quantity);
+    }
+    return Array.from(groups.values()).sort((a, b) => a.period_label.localeCompare(b.period_label));
+  }
+
   let groupExpr;
   let limitDays;
 
@@ -72,6 +140,30 @@ async function getStockMovement(period = 'daily') {
 }
 
 async function getRecentTransactions(limit = 8, actor = null) {
+  if (isDemoMode()) {
+    return store.stock_transactions
+      .filter((t) => !(actor && actor.role === 'STAFF' && t.user_id !== actor.id))
+      .slice(0, Number(limit))
+      .map((t) => {
+        const item = store.items.find((i) => i.id === t.item_id);
+        const user = store.users.find((u) => u.id === t.user_id);
+        return {
+          id: t.id,
+          transaction_code: t.transaction_code,
+          transaction_type: t.transaction_type,
+          quantity: t.quantity,
+          previous_quantity: t.previous_quantity,
+          new_quantity: t.new_quantity,
+          created_at: t.created_at,
+          item_id: item?.id,
+          item_name: item?.name || 'Unknown',
+          sku: item?.sku || '',
+          unit: item?.unit || '',
+          user_name: user?.name || 'Unknown',
+        };
+      });
+  }
+
   let where = '';
   const params = [];
 
@@ -96,6 +188,25 @@ async function getRecentTransactions(limit = 8, actor = null) {
 }
 
 async function getLowStockOverview(limit = 8) {
+  if (isDemoMode()) {
+    return store.items
+      .filter((i) => i.status === 'ACTIVE' && i.current_quantity <= i.minimum_stock_level)
+      .map((i) => {
+        const cat = store.categories.find((c) => c.id === i.category_id);
+        return {
+          id: i.id,
+          sku: i.sku,
+          name: i.name,
+          unit: i.unit,
+          current_quantity: i.current_quantity,
+          minimum_stock_level: i.minimum_stock_level,
+          category_name: cat?.name || '',
+        };
+      })
+      .sort((a, b) => a.current_quantity - b.current_quantity)
+      .slice(0, Number(limit));
+  }
+
   const [rows] = await pool.query(
     `SELECT i.id, i.sku, i.name, i.unit, i.current_quantity, i.minimum_stock_level, c.name AS category_name
      FROM items i

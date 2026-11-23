@@ -1,5 +1,6 @@
 const QRCode = require('qrcode');
-const { pool } = require('../config/db');
+const { pool, isDemoMode } = require('../config/db');
+const { store } = require('../config/demoStore');
 const ApiError = require('../utils/ApiError');
 const { syncItemAlerts } = require('./alertService');
 const { generateTransactionCode } = require('./stockService');
@@ -14,6 +15,17 @@ function computeStockStatus(qty, minLevel) {
   return 'IN_STOCK';
 }
 
+function enrichDemoItem(item) {
+  const cat = store.categories.find((c) => c.id === item.category_id);
+  const sup = store.suppliers.find((s) => s.id === item.supplier_id);
+  return {
+    ...item,
+    category_name: cat?.name || 'Uncategorized',
+    supplier_name: sup?.name || null,
+    stock_status: computeStockStatus(item.current_quantity, item.minimum_stock_level),
+  };
+}
+
 async function listItems({
   search = '',
   categoryId = '',
@@ -24,6 +36,46 @@ async function listItems({
   page = 1,
   limit = 20,
 }) {
+  if (isDemoMode()) {
+    const q = search.trim().toLowerCase();
+    const dir = String(sortOrder).toUpperCase() === 'ASC' ? 1 : -1;
+    const filtered = store.items
+      .map(enrichDemoItem)
+      .filter((i) => {
+        if (!includeArchived && i.status !== 'ACTIVE') return false;
+        if (categoryId && i.category_id !== Number(categoryId)) return false;
+        if (stockStatus && i.stock_status !== stockStatus) return false;
+        if (q) {
+          const hay = `${i.name} ${i.sku} ${i.category_name}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const keyMap = {
+          id: 'id', name: 'name', sku: 'sku', category: 'category_name',
+          current_quantity: 'current_quantity', minimum_stock_level: 'minimum_stock_level',
+          unit_cost: 'unit_cost', updated_at: 'updated_at',
+        };
+        const k = keyMap[sortBy] || 'updated_at';
+        const va = a[k] ?? '';
+        const vb = b[k] ?? '';
+        if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+        return String(va).localeCompare(String(vb)) * dir;
+      });
+
+    const offset = (page - 1) * limit;
+    return {
+      data: filtered.slice(offset, offset + limit),
+      pagination: {
+        page,
+        limit,
+        total: filtered.length,
+        totalPages: Math.ceil(filtered.length / limit) || 1,
+      },
+    };
+  }
+
   const allowedSort = {
     id: 'i.id',
     name: 'i.name',
@@ -101,6 +153,12 @@ async function listItems({
 }
 
 async function getItemById(id) {
+  if (isDemoMode()) {
+    const found = store.items.find((i) => i.id === Number(id));
+    if (!found) throw new ApiError(404, 'Inventory item not found.');
+    return enrichDemoItem(found);
+  }
+
   const [rows] = await pool.query(
     `SELECT i.*, c.name AS category_name, s.name AS supplier_name
      FROM items i
@@ -152,6 +210,61 @@ async function createItem(data, actor, ipAddress) {
     throw new ApiError(400, 'Unit cost must be a valid non-negative number.');
   }
 
+  if (isDemoMode()) {
+    if (store.items.some((i) => i.sku === sku)) {
+      throw new ApiError(409, `An item with SKU "${sku}" already exists.`);
+    }
+    const now = new Date().toISOString();
+    const newItem = {
+      id: store.seq.items++,
+      sku,
+      name,
+      description: data.description ? data.description.trim() : null,
+      category_id: Number(data.category_id),
+      supplier_id: data.supplier_id ? Number(data.supplier_id) : null,
+      unit: data.unit.trim(),
+      current_quantity: openingQty,
+      minimum_stock_level: minLevel,
+      unit_cost: unitCost,
+      status: 'ACTIVE',
+      created_at: now,
+      updated_at: now,
+    };
+    store.items.unshift(newItem);
+
+    if (openingQty > 0) {
+      store.stock_transactions.unshift({
+        id: store.seq.stock_transactions++,
+        transaction_code: generateTransactionCode('OPEN'),
+        item_id: newItem.id,
+        user_id: actor.id,
+        transaction_type: 'IN',
+        quantity: openingQty,
+        previous_quantity: 0,
+        new_quantity: openingQty,
+        reference_number: 'OPENING-STOCK',
+        supplier_or_recipient: data.supplier_name || null,
+        reason: 'Opening Stock Entry',
+        notes: 'Initial balance on product creation',
+        related_transaction_id: null,
+        created_at: now,
+      });
+    }
+
+    await syncItemAlerts(null, newItem);
+    await logAudit({
+      userId: actor.id,
+      action: 'CREATE_ITEM',
+      entityType: 'ITEM',
+      entityId: newItem.id,
+      description: `Created product "${name}" (${sku}) with opening stock ${openingQty} ${newItem.unit}.`,
+      ipAddress,
+    });
+    emitInventoryUpdate({ type: 'ITEM_CREATED', itemId: newItem.id, sku, name });
+    emitAlertsUpdate({ itemId: newItem.id });
+    return enrichDemoItem(newItem);
+  }
+
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
@@ -180,7 +293,6 @@ async function createItem(data, actor, ipAddress) {
 
     const itemId = result.insertId;
 
-    // Opening stock entry must create an initial ledger transaction
     if (openingQty > 0) {
       const txCode = generateTransactionCode('OPEN');
       await connection.query(
@@ -227,6 +339,47 @@ async function createItem(data, actor, ipAddress) {
 }
 
 async function updateItem(id, data, actor, ipAddress) {
+  if (isDemoMode()) {
+    const item = store.items.find((i) => i.id === Number(id));
+    if (!item) throw new ApiError(404, 'Inventory item not found.');
+
+    const nextSku = data.sku ? data.sku.trim().toUpperCase() : item.sku;
+    if (nextSku !== item.sku && store.items.some((i) => i.sku === nextSku && i.id !== item.id)) {
+      throw new ApiError(409, `Another item already uses SKU "${nextSku}".`);
+    }
+
+    const nextMin = data.minimum_stock_level !== undefined ? Number(data.minimum_stock_level) : item.minimum_stock_level;
+    if (!Number.isFinite(nextMin) || nextMin < 0) throw new ApiError(400, 'Minimum stock threshold must be 0 or greater.');
+
+    const nextCost = data.unit_cost !== undefined
+      ? (data.unit_cost === '' || data.unit_cost === null ? null : Number(data.unit_cost))
+      : item.unit_cost;
+    if (nextCost !== null && (!Number.isFinite(nextCost) || nextCost < 0)) throw new ApiError(400, 'Unit cost must be a valid non-negative number.');
+
+    item.sku = nextSku;
+    if (data.name) item.name = data.name.trim();
+    if (data.description !== undefined) item.description = data.description ? data.description.trim() : null;
+    if (data.category_id) item.category_id = Number(data.category_id);
+    if (data.supplier_id !== undefined) item.supplier_id = data.supplier_id ? Number(data.supplier_id) : null;
+    if (data.unit) item.unit = data.unit.trim();
+    item.minimum_stock_level = nextMin;
+    item.unit_cost = nextCost;
+    item.updated_at = new Date().toISOString();
+
+    await syncItemAlerts(null, item);
+    await logAudit({
+      userId: actor.id,
+      action: 'UPDATE_ITEM',
+      entityType: 'ITEM',
+      entityId: id,
+      description: `Updated product "${item.name}" (${item.sku}).`,
+      ipAddress,
+    });
+    emitInventoryUpdate({ type: 'ITEM_UPDATED', itemId: Number(id) });
+    emitAlertsUpdate({ itemId: Number(id) });
+    return enrichDemoItem(item);
+  }
+
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
@@ -314,6 +467,29 @@ async function updateItem(id, data, actor, ipAddress) {
 }
 
 async function archiveOrDeleteItem(id, actor, ipAddress) {
+  if (isDemoMode()) {
+    const idx = store.items.findIndex((i) => i.id === Number(id));
+    if (idx === -1) throw new ApiError(404, 'Inventory item not found.');
+    const item = store.items[idx];
+    const hasTx = store.stock_transactions.some((t) => t.item_id === item.id);
+    if (hasTx) {
+      item.status = 'ARCHIVED';
+      store.alerts.forEach((a) => {
+        if (a.item_id === item.id && a.status === 'ACTIVE') {
+          a.status = 'RESOLVED';
+          a.resolved_at = new Date().toISOString();
+        }
+      });
+      await logAudit({ userId: actor.id, action: 'ARCHIVE_ITEM', entityType: 'ITEM', entityId: id, description: `Archived product "${item.name}" (${item.sku}).`, ipAddress });
+      emitInventoryUpdate({ type: 'ITEM_ARCHIVED', itemId: Number(id) });
+      return { id: Number(id), archived: true };
+    }
+    store.items.splice(idx, 1);
+    await logAudit({ userId: actor.id, action: 'DELETE_ITEM', entityType: 'ITEM', entityId: id, description: `Deleted product "${item.name}" (${item.sku}).`, ipAddress });
+    emitInventoryUpdate({ type: 'ITEM_DELETED', itemId: Number(id) });
+    return { id: Number(id), archived: false };
+  }
+
   const [txCheck] = await pool.query('SELECT COUNT(*) AS count FROM stock_transactions WHERE item_id = ?', [id]);
   const [itemRows] = await pool.query('SELECT * FROM items WHERE id = ? LIMIT 1', [id]);
   const item = itemRows[0];
@@ -321,7 +497,6 @@ async function archiveOrDeleteItem(id, actor, ipAddress) {
     throw new ApiError(404, 'Inventory item not found.');
   }
 
-  // Preserve immutable ledger history: archive if item has transactions, hard delete only if zero transactions
   if (txCheck[0].count > 0) {
     await pool.query("UPDATE items SET status = 'ARCHIVED' WHERE id = ?", [id]);
     await pool.query("UPDATE alerts SET status = 'RESOLVED', resolved_at = NOW() WHERE item_id = ? AND status = 'ACTIVE'", [id]);

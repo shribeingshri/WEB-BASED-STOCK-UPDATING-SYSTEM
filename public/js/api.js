@@ -44,3 +44,4 @@ window.API = (() => {
     del: (path) => request(path, { method: 'DELETE' }),
   };
 })();
+

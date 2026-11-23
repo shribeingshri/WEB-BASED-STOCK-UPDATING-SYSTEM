@@ -117,3 +117,4 @@
 
   App.registerPage('alerts', render);
 })();
+

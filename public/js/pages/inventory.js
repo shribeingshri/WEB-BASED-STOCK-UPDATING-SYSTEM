@@ -437,3 +437,4 @@
 
   App.registerPage('inventory', render);
 })();
+

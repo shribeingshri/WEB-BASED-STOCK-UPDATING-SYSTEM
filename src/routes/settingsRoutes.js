@@ -12,3 +12,4 @@ router.put('/', requireRole('ADMIN'), settingsController.updateSettings);
 router.get('/audit-logs', requireRole('ADMIN'), settingsController.getAuditLogs);
 
 module.exports = router;
+

@@ -39,3 +39,4 @@ test('parseNonNegativeNumber validates >= 0', () => {
   assert.equal(parseNonNegativeNumber('5.5', 'min'), 5.5);
   assert.throws(() => parseNonNegativeNumber(-1, 'min'), ApiError);
 });
+

@@ -176,3 +176,4 @@
 
   App.registerPage('stock-out', render);
 })();
+

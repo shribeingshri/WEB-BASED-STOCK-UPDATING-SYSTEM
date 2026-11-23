@@ -1,6 +1,7 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { pool } = require('../config/db');
+const { pool, isDemoMode } = require('../config/db');
+const { store } = require('../config/demoStore');
 const env = require('../config/env');
 const ApiError = require('../utils/ApiError');
 const { logAudit } = require('./auditService');
@@ -11,15 +12,22 @@ async function login({ identifier, password, rememberMe = false, ipAddress = nul
     throw new ApiError(400, 'Email/username and password are required.');
   }
 
-  const [rows] = await pool.query(
-    `SELECT id, name, username, email, password_hash, role, status, last_login
-     FROM users
-     WHERE LOWER(email) = ? OR LOWER(username) = ?
-     LIMIT 1`,
-    [cleanId, cleanId]
-  );
+  let user;
+  if (isDemoMode()) {
+    user = store.users.find(
+      (u) => u.email.toLowerCase() === cleanId || u.username.toLowerCase() === cleanId
+    );
+  } else {
+    const [rows] = await pool.query(
+      `SELECT id, name, username, email, password_hash, role, status, last_login
+       FROM users
+       WHERE LOWER(email) = ? OR LOWER(username) = ?
+       LIMIT 1`,
+      [cleanId, cleanId]
+    );
+    user = rows[0];
+  }
 
-  const user = rows[0];
   if (!user) {
     throw new ApiError(401, 'Invalid credentials.');
   }
@@ -33,7 +41,12 @@ async function login({ identifier, password, rememberMe = false, ipAddress = nul
     throw new ApiError(401, 'Invalid credentials.');
   }
 
-  await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
+  const now = new Date().toISOString();
+  if (isDemoMode()) {
+    user.last_login = now;
+  } else {
+    await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
+  }
 
   await logAudit({
     userId: user.id,
@@ -61,7 +74,7 @@ async function login({ identifier, password, rememberMe = false, ipAddress = nul
       email: user.email,
       role: user.role,
       status: user.status,
-      last_login: new Date().toISOString(),
+      last_login: now,
     },
   };
 }

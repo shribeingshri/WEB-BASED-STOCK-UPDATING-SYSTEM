@@ -13,3 +13,4 @@ router.post('/adjust', requireRole('ADMIN'), stockController.adjustStock);
 router.get('/transactions', stockController.listTransactions);
 
 module.exports = router;
+

@@ -1,16 +1,24 @@
 const http = require('http');
 const app = require('./app');
 const env = require('./config/env');
-const { testConnection } = require('./config/db');
+const { testConnection, enableDemoMode, isDemoMode } = require('./config/db');
 const { initSocket } = require('./utils/socket');
 
 async function startServer() {
   try {
-    await testConnection();
-    console.log(`Connected to MySQL database "${env.db.name}" at ${env.db.host}:${env.db.port}`);
+    const connected = await testConnection();
+    if (connected) {
+      console.log(`Connected to MySQL database "${env.db.name}" at ${env.db.host}:${env.db.port}`);
+    } else {
+      console.log('Running in In-Memory Demo Mode (DEMO_MODE=true).');
+    }
   } catch (err) {
-    console.error('Warning: MySQL connection failed on startup:', err.message);
-    console.error('Please verify your .env database credentials and ensure MySQL is running.');
+    enableDemoMode();
+    console.log(`MySQL unavailable (${err.message}). Automatically running in In-Memory Demo Mode.`);
+  }
+
+  if (isDemoMode()) {
+    console.log('Demo Accounts: admin@buildmoreventures.in / Admin@123 | staff@buildmoreventures.in / Staff@123');
   }
 
   const server = http.createServer(app);

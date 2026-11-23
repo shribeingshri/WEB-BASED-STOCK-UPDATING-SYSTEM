@@ -120,3 +120,4 @@ window.UI = (() => {
     refreshIcons,
   };
 })();
+

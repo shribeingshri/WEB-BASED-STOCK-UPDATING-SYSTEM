@@ -12,3 +12,4 @@ router.get('/recent-transactions', dashboardController.recentTransactions);
 router.get('/low-stock', dashboardController.lowStock);
 
 module.exports = router;
+

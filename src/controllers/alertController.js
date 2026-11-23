@@ -15,3 +15,4 @@ const resolve = asyncHandler(async (req, res) => {
 });
 
 module.exports = { list, resolve };
+

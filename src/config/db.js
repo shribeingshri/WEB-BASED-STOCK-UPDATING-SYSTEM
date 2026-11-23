@@ -1,5 +1,8 @@
 const mysql = require('mysql2/promise');
 const env = require('./env');
+const { initDemoStore } = require('./demoStore');
+
+let demoMode = process.env.DEMO_MODE === 'true';
 
 const pool = mysql.createPool({
   host: env.db.host,
@@ -15,6 +18,10 @@ const pool = mysql.createPool({
 });
 
 async function testConnection() {
+  if (demoMode) {
+    initDemoStore();
+    return false;
+  }
   const conn = await pool.getConnection();
   try {
     await conn.ping();
@@ -24,4 +31,13 @@ async function testConnection() {
   }
 }
 
-module.exports = { pool, testConnection };
+function enableDemoMode() {
+  demoMode = true;
+  initDemoStore();
+}
+
+function isDemoMode() {
+  return demoMode;
+}
+
+module.exports = { pool, testConnection, enableDemoMode, isDemoMode };

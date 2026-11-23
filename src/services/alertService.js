@@ -1,5 +1,61 @@
-const { pool } = require('../config/db');
+const { pool, isDemoMode } = require('../config/db');
+const { store } = require('../config/demoStore');
 const ApiError = require('../utils/ApiError');
+
+function syncItemAlertsDemo(item) {
+  const qty = Number(item.current_quantity);
+  const min = Number(item.minimum_stock_level);
+  const now = new Date().toISOString();
+
+  let targetType = null;
+  let message = '';
+
+  if (qty <= 0) {
+    targetType = 'OUT_OF_STOCK';
+    message = `${item.name} (${item.sku}) is out of stock (0 ${item.unit}).`;
+  } else if (qty <= min) {
+    targetType = 'LOW_STOCK';
+    message = `${item.name} (${item.sku}) is low on stock (${qty} / min ${min} ${item.unit}).`;
+  }
+
+  if (!targetType) {
+    store.alerts.forEach((a) => {
+      if (a.item_id === item.id && a.status === 'ACTIVE') {
+        a.status = 'RESOLVED';
+        a.resolved_at = now;
+      }
+    });
+    return { changed: true, activeAlert: null };
+  }
+
+  const otherType = targetType === 'OUT_OF_STOCK' ? 'LOW_STOCK' : 'OUT_OF_STOCK';
+  store.alerts.forEach((a) => {
+    if (a.item_id === item.id && a.status === 'ACTIVE' && a.alert_type === otherType) {
+      a.status = 'RESOLVED';
+      a.resolved_at = now;
+    }
+  });
+
+  const existing = store.alerts.find(
+    (a) => a.item_id === item.id && a.status === 'ACTIVE' && a.alert_type === targetType
+  );
+  if (existing) {
+    existing.message = message;
+    return { changed: true, activeAlert: existing };
+  }
+
+  const created = {
+    id: store.seq.alerts++,
+    item_id: item.id,
+    alert_type: targetType,
+    message,
+    status: 'ACTIVE',
+    created_at: now,
+    resolved_at: null,
+  };
+  store.alerts.unshift(created);
+  return { changed: true, activeAlert: created };
+}
 
 /**
  * Synchronizes active alerts for an item inside an existing DB transaction.
@@ -7,6 +63,10 @@ const ApiError = require('../utils/ApiError');
  * alerts automatically when stock is replenished above minimum_stock_level.
  */
 async function syncItemAlerts(connection, item) {
+  if (isDemoMode()) {
+    return syncItemAlertsDemo(item);
+  }
+
   const qty = Number(item.current_quantity);
   const min = Number(item.minimum_stock_level);
 
@@ -22,7 +82,6 @@ async function syncItemAlerts(connection, item) {
   }
 
   if (!targetType) {
-    // Stock is healthy — resolve any active alerts for this item
     await connection.query(
       `UPDATE alerts SET status = 'RESOLVED', resolved_at = NOW()
        WHERE item_id = ? AND status = 'ACTIVE'`,
@@ -31,7 +90,6 @@ async function syncItemAlerts(connection, item) {
     return { changed: true, activeAlert: null };
   }
 
-  // Resolve any active alert of the *other* type
   const otherType = targetType === 'OUT_OF_STOCK' ? 'LOW_STOCK' : 'OUT_OF_STOCK';
   await connection.query(
     `UPDATE alerts SET status = 'RESOLVED', resolved_at = NOW()
@@ -39,7 +97,6 @@ async function syncItemAlerts(connection, item) {
     [item.id, otherType]
   );
 
-  // Check if an active alert of targetType already exists
   const [existing] = await connection.query(
     `SELECT id FROM alerts WHERE item_id = ? AND status = 'ACTIVE' AND alert_type = ? LIMIT 1`,
     [item.id, targetType]
@@ -58,7 +115,35 @@ async function syncItemAlerts(connection, item) {
 }
 
 async function listAlerts({ status = 'ACTIVE', alertType = '' }) {
-  let where = 'WHERE i.status = \'ACTIVE\'';
+  if (isDemoMode()) {
+    return store.alerts
+      .filter((a) => {
+        const item = store.items.find((i) => i.id === a.item_id && i.status === 'ACTIVE');
+        if (!item) return false;
+        if (status && status !== 'ALL' && a.status !== status) return false;
+        if (alertType && alertType !== 'ALL' && a.alert_type !== alertType) return false;
+        return true;
+      })
+      .map((a) => {
+        const item = store.items.find((i) => i.id === a.item_id);
+        const cat = store.categories.find((c) => c.id === item.category_id);
+        return {
+          ...a,
+          item_name: item.name,
+          sku: item.sku,
+          unit: item.unit,
+          current_quantity: item.current_quantity,
+          minimum_stock_level: item.minimum_stock_level,
+          category_name: cat?.name || '',
+        };
+      })
+      .sort((a, b) => {
+        if (a.alert_type !== b.alert_type) return a.alert_type === 'OUT_OF_STOCK' ? -1 : 1;
+        return new Date(b.created_at) - new Date(a.created_at);
+      });
+  }
+
+  let where = "WHERE i.status = 'ACTIVE'";
   const params = [];
 
   if (status && status !== 'ALL') {
@@ -85,6 +170,14 @@ async function listAlerts({ status = 'ACTIVE', alertType = '' }) {
 }
 
 async function resolveAlert(id) {
+  if (isDemoMode()) {
+    const alert = store.alerts.find((a) => a.id === Number(id) && a.status === 'ACTIVE');
+    if (!alert) throw new ApiError(404, 'Active alert not found.');
+    alert.status = 'RESOLVED';
+    alert.resolved_at = new Date().toISOString();
+    return { id: Number(id), status: 'RESOLVED' };
+  }
+
   const [result] = await pool.query(
     `UPDATE alerts SET status = 'RESOLVED', resolved_at = NOW() WHERE id = ? AND status = 'ACTIVE'`,
     [id]

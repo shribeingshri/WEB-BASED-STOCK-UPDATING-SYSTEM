@@ -28,3 +28,4 @@ router.use('/reports', reportRoutes);
 router.use('/settings', settingsRoutes);
 
 module.exports = router;
+

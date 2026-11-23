@@ -29,3 +29,4 @@ if (env.isProduction && (!process.env.JWT_SECRET || env.jwt.secret.length < 32))
 }
 
 module.exports = env;
+

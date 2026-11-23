@@ -2,18 +2,16 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const app = require('../src/app');
-const { testConnection } = require('../src/config/db');
+const { testConnection, enableDemoMode } = require('../src/config/db');
 
 let server;
 let baseUrl;
-let dbAvailable = false;
 
 test.before(async () => {
   try {
     await testConnection();
-    dbAvailable = true;
   } catch {
-    dbAvailable = false;
+    enableDemoMode();
   }
 
   server = http.createServer(app);
@@ -41,12 +39,7 @@ test('Unauthenticated access to protected routes returns 401', async () => {
   assert.equal(res.status, 401);
 });
 
-test('Full authenticated inventory, stock-in/out, and concurrency workflow', async (t) => {
-  if (!dbAvailable) {
-    t.skip('MySQL database not configured or reachable in this environment.');
-    return;
-  }
-
+test('Full authenticated inventory, stock-in/out, and concurrency workflow', async () => {
   // 1. Login as Admin
   const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',

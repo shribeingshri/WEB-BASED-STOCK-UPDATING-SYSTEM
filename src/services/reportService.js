@@ -1,14 +1,43 @@
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
-const { pool } = require('../config/db');
+const { pool, isDemoMode } = require('../config/db');
+const { store } = require('../config/demoStore');
 const env = require('../config/env');
 
 async function getCompanyName() {
+  if (isDemoMode()) {
+    return store.app_settings.company_name || env.companyName;
+  }
   const [rows] = await pool.query("SELECT setting_value FROM app_settings WHERE setting_key = 'company_name' LIMIT 1");
   return rows[0]?.setting_value || env.companyName;
 }
 
 async function getInventoryReport(filters = {}) {
+  if (isDemoMode()) {
+    return store.items
+      .filter((i) => {
+        if (i.status !== 'ACTIVE') return false;
+        if (filters.categoryId && i.category_id !== Number(filters.categoryId)) return false;
+        if (filters.itemId && i.id !== Number(filters.itemId)) return false;
+        return true;
+      })
+      .map((i) => {
+        const cat = store.categories.find((c) => c.id === i.category_id);
+        return {
+          id: i.id,
+          sku: i.sku,
+          name: i.name,
+          category: cat?.name || '',
+          current_quantity: i.current_quantity,
+          unit: i.unit,
+          minimum_stock_level: i.minimum_stock_level,
+          unit_cost: i.unit_cost,
+          stock_status: i.current_quantity <= 0 ? 'Out of Stock' : i.current_quantity <= i.minimum_stock_level ? 'Low Stock' : 'In Stock',
+          updated_at: i.updated_at,
+        };
+      });
+  }
+
   let where = "WHERE i.status = 'ACTIVE'";
   const params = [];
 
@@ -40,6 +69,30 @@ async function getInventoryReport(filters = {}) {
 }
 
 async function getLowStockReport(filters = {}) {
+  if (isDemoMode()) {
+    return store.items
+      .filter((i) => {
+        if (i.status !== 'ACTIVE' || i.current_quantity > i.minimum_stock_level) return false;
+        if (filters.categoryId && i.category_id !== Number(filters.categoryId)) return false;
+        return true;
+      })
+      .map((i) => {
+        const cat = store.categories.find((c) => c.id === i.category_id);
+        return {
+          id: i.id,
+          sku: i.sku,
+          name: i.name,
+          category: cat?.name || '',
+          current_quantity: i.current_quantity,
+          unit: i.unit,
+          minimum_stock_level: i.minimum_stock_level,
+          shortage_quantity: Math.max(i.minimum_stock_level - i.current_quantity, 0),
+          stock_status: i.current_quantity <= 0 ? 'Out of Stock' : 'Low Stock',
+        };
+      })
+      .sort((a, b) => a.current_quantity - b.current_quantity);
+  }
+
   let where = "WHERE i.status = 'ACTIVE' AND i.current_quantity <= i.minimum_stock_level";
   const params = [];
 
@@ -63,6 +116,34 @@ async function getLowStockReport(filters = {}) {
 }
 
 async function getStockTransactionsReport(type, filters = {}) {
+  if (isDemoMode()) {
+    return store.stock_transactions
+      .map((t) => {
+        const item = store.items.find((i) => i.id === t.item_id);
+        const cat = store.categories.find((c) => c.id === item?.category_id);
+        const user = store.users.find((u) => u.id === t.user_id);
+        return {
+          ...t,
+          sku: item?.sku || '',
+          product_name: item?.name || '',
+          category: cat?.name || '',
+          category_id: item?.category_id,
+          unit: item?.unit || '',
+          performed_by: user?.name || '',
+        };
+      })
+      .filter((t) => {
+        if (type && t.transaction_type !== type) return false;
+        if (!type && filters.transactionType && t.transaction_type !== filters.transactionType) return false;
+        if (filters.startDate && t.created_at.slice(0, 10) < filters.startDate) return false;
+        if (filters.endDate && t.created_at.slice(0, 10) > filters.endDate) return false;
+        if (filters.itemId && t.item_id !== Number(filters.itemId)) return false;
+        if (filters.categoryId && t.category_id !== Number(filters.categoryId)) return false;
+        if (filters.userId && t.user_id !== Number(filters.userId)) return false;
+        return true;
+      });
+  }
+
   let where = 'WHERE 1=1';
   const params = [];
 
@@ -111,6 +192,37 @@ async function getStockTransactionsReport(type, filters = {}) {
 }
 
 async function getStockMovementReport(filters = {}) {
+  if (isDemoMode()) {
+    return store.items
+      .filter((i) => {
+        if (i.status !== 'ACTIVE') return false;
+        if (filters.categoryId && i.category_id !== Number(filters.categoryId)) return false;
+        if (filters.itemId && i.id !== Number(filters.itemId)) return false;
+        return true;
+      })
+      .map((i) => {
+        const cat = store.categories.find((c) => c.id === i.category_id);
+        const txs = store.stock_transactions.filter((t) => {
+          if (t.item_id !== i.id) return false;
+          if (filters.startDate && t.created_at.slice(0, 10) < filters.startDate) return false;
+          if (filters.endDate && t.created_at.slice(0, 10) > filters.endDate) return false;
+          return true;
+        });
+        const totalIn = txs.filter((t) => t.transaction_type === 'IN').reduce((s, t) => s + Number(t.quantity), 0);
+        const totalOut = txs.filter((t) => t.transaction_type === 'OUT').reduce((s, t) => s + Number(t.quantity), 0);
+        return {
+          sku: i.sku,
+          product_name: i.name,
+          category: cat?.name || '',
+          total_in: totalIn,
+          total_out: totalOut,
+          net_movement: totalIn - totalOut,
+          current_quantity: i.current_quantity,
+          unit: i.unit,
+        };
+      });
+  }
+
   let txWhere = 'WHERE 1=1';
   const params = [];
 

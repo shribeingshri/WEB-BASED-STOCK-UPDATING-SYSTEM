@@ -161,3 +161,4 @@
 
   App.registerPage('stock-in', render);
 })();
+

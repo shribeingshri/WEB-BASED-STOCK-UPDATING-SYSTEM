@@ -11,3 +11,4 @@ router.get('/', alertController.list);
 router.patch('/:id/resolve', requireRole('ADMIN'), alertController.resolve);
 
 module.exports = router;
+
