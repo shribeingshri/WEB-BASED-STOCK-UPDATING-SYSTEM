@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign In — Buildmore Ventures LLP</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/main.css" />
+  <link rel="stylesheet" href="/css/components.css" />
+  <style>
+    .auth-page {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: var(--bg-canvas);
+    }
+    .auth-card {
+      width: 100%;
+      max-width: 400px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      padding: 28px;
+    }
+    .auth-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .auth-title {
+      margin: 0 0 4px;
+      font-size: 19px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .auth-desc {
+      margin: 0 0 20px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .password-wrap {
+      position: relative;
+    }
+    .password-wrap .input {
+      width: 100%;
+      padding-right: 38px;
+    }
+    .toggle-pw {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 4px;
+      display: grid;
+      place-items: center;
+    }
+    .auth-error {
+      display: none;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      background: var(--danger-bg);
+      border: 1px solid var(--danger-border);
+      color: var(--danger);
+      font-size: 12.5px;
+      margin-bottom: 14px;
+    }
+    .auth-error.visible {
+      display: block;
+    }
+    .auth-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 4px 0 16px;
+      font-size: 12.5px;
+      color: var(--text-secondary);
+    }
+    .auth-footer {
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <main class="auth-page">
+    <section class="auth-card">
+      <div class="auth-brand">
+        <div class="brand-mark">BV</div>
+        <div>
+          <div class="brand-name">Buildmore Ventures LLP</div>
+          <div class="brand-sub">Stock &amp; Inventory Control</div>
+        </div>
+      </div>
+
+      <h1 class="auth-title">Sign in to your account</h1>
+      <p class="auth-desc">Centralized real-time inventory management portal.</p>
+
+      <div id="authError" class="auth-error" role="alert"></div>
+
+      <form id="loginForm" novalidate>
+        <div class="form-field" style="margin-bottom: 12px;">
+          <label class="form-label" for="identifier">Email or Username</label>
+          <input
+            class="input"
+            id="identifier"
+            name="identifier"
+            type="text"
+            placeholder="admin@buildmoreventures.in"
+            autocomplete="username"
+            required
+          />
+        </div>
+
+        <div class="form-field" style="margin-bottom: 10px;">
+          <label class="form-label" for="password">Password</label>
+          <div class="password-wrap">
+            <input
+              class="input"
+              id="password"
+              name="password"
+              type="password"
+              placeholder="Enter your password"
+              autocomplete="current-password"
+              required
+            />
+            <button type="button" id="togglePwBtn" class="toggle-pw" aria-label="Show password">
+              <i data-lucide="eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="auth-row">
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <input type="checkbox" id="rememberMe" name="rememberMe" />
+            <span>Remember me (7 days)</span>
+          </label>
+          <span title="Contact your system administrator to reset forgotten passwords.">Forgot password?</span>
+        </div>
+
+        <button type="submit" id="loginBtn" class="btn btn-primary" style="width: 100%;">
+          Sign In
+        </button>
+      </form>
+
+      <div class="auth-footer">
+        Protected by role-based access control &amp; audit logging.
+      </div>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="/js/auth.js"></script>
+</body>
+</html>
