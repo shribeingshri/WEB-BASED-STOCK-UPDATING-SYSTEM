@@ -144,3 +144,4 @@ function initDemoStore() {
 }
 
 module.exports = { store, initDemoStore };
+

@@ -11,6 +11,7 @@ const app = express();
 
 app.use(
   helmet({
+    hsts: env.isProduction,
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
@@ -19,6 +20,7 @@ app.use(
         fontSrc: ["'self'", 'https://fonts.gstatic.com'],
         imgSrc: ["'self'", 'data:', 'blob:'],
         connectSrc: ["'self'", 'ws:', 'wss:'],
+        upgradeInsecureRequests: env.isProduction ? [] : null,
       },
     },
   })
