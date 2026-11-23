@@ -16,16 +16,16 @@ const env = {
     name: process.env.DB_NAME || 'buildmore_inventory',
   },
   jwt: {
-    secret: process.env.JWT_SECRET || 'dev-only-insecure-secret-change-in-production',
+    secret: process.env.JWT_SECRET || 'buildmore-demo-jwt-secret-change-in-production-2026',
     expiresIn: process.env.JWT_EXPIRES_IN || '8h',
   },
-  cookieSecure: process.env.COOKIE_SECURE === 'true',
+  cookieSecure: process.env.COOKIE_SECURE === 'true' || Boolean(process.env.VERCEL),
   bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '10', 10),
   companyName: process.env.COMPANY_NAME || 'Buildmore Ventures LLP',
 };
 
-if (env.isProduction && (!process.env.JWT_SECRET || env.jwt.secret.length < 32)) {
-  throw new Error('JWT_SECRET must be set to at least 32 characters in production.');
+if (env.isProduction && process.env.DB_HOST && (!process.env.JWT_SECRET || env.jwt.secret.length < 32)) {
+  throw new Error('JWT_SECRET must be set to at least 32 characters in production with a database.');
 }
 
 module.exports = env;

@@ -2,7 +2,10 @@ const mysql = require('mysql2/promise');
 const env = require('./env');
 const { initDemoStore } = require('./demoStore');
 
-let demoMode = process.env.DEMO_MODE === 'true';
+let demoMode = process.env.DEMO_MODE === 'true' || (Boolean(process.env.VERCEL) && !process.env.DB_HOST);
+if (demoMode) {
+  initDemoStore();
+}
 
 const pool = mysql.createPool({
   host: env.db.host,

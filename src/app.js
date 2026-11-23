@@ -8,6 +8,7 @@ const apiRoutes = require('./routes');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
+app.set('trust proxy', 1);
 
 app.use(
   helmet({
@@ -31,7 +32,7 @@ app.use(
 
 app.use(
   cors({
-    origin: env.clientOrigin,
+    origin: process.env.CLIENT_ORIGIN || true,
     credentials: true,
   })
 );
