@@ -87,8 +87,14 @@ window.App = (() => {
     document.getElementById('mobileBackdrop').classList.remove('open');
 
     const renderer = pageRegistry[page];
+    const pageContainer = document.getElementById('pageContent');
     if (renderer) {
-      renderer(document.getElementById('pageContent'), params);
+      Promise.resolve(renderer(pageContainer, params)).catch((err) => {
+        pageContainer.innerHTML = `<div class="empty-state">Failed to load page: ${UI.esc(err.message || 'Unknown error')}</div>`;
+        UI.toast(err.message || 'Failed to load page', 'error');
+      });
+    } else {
+      pageContainer.innerHTML = `<div class="empty-state">Page "${UI.esc(page)}" is not registered.</div>`;
     }
   }
 

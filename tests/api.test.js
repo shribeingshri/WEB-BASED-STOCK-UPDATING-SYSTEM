@@ -100,4 +100,49 @@ test('Full authenticated inventory, stock-in/out, and concurrency workflow', asy
   const itemCheck = await fetch(`${baseUrl}/api/items/${createdItem.id}`, { headers: { Cookie: cookie } });
   const itemData = (await itemCheck.json()).data;
   assert.equal(Number(itemData.current_quantity), 20);
+
+  // 7. Verify QR code, dashboard, alerts, reports (JSON/CSV/XLSX/PDF), users, settings, audit logs
+  const endpoints = [
+    `/api/items/${createdItem.id}/qr`,
+    `/api/items/${createdItem.id}/transactions`,
+    '/api/dashboard/summary',
+    '/api/dashboard/stock-movement?period=daily',
+    '/api/dashboard/stock-movement?period=weekly',
+    '/api/dashboard/stock-movement?period=monthly',
+    '/api/dashboard/recent-transactions',
+    '/api/dashboard/low-stock',
+    '/api/alerts?status=ALL',
+    '/api/stock/transactions',
+    '/api/users',
+    '/api/suppliers',
+    '/api/settings',
+    '/api/settings/audit-logs',
+    '/api/reports/inventory?format=json',
+    '/api/reports/inventory?format=csv',
+    '/api/reports/inventory?format=xlsx',
+    '/api/reports/inventory?format=pdf',
+    '/api/reports/stock-in?format=json',
+    '/api/reports/stock-out?format=json',
+    '/api/reports/low-stock?format=json',
+    '/api/reports/movements?format=json',
+  ];
+
+  for (const ep of endpoints) {
+    const res = await fetch(`${baseUrl}${ep}`, { headers: { Cookie: cookie } });
+    assert.equal(res.status, 200, `Expected 200 for ${ep}, got ${res.status}`);
+  }
+
+  // 8. Staff RBAC check: Staff cannot access /api/users or /api/reports/inventory
+  const staffLogin = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier: 'staff@buildmoreventures.in', password: 'Staff@123' }),
+  });
+  assert.equal(staffLogin.status, 200);
+  const staffCookie = staffLogin.headers.get('set-cookie').split(';')[0];
+
+  const staffUsersRes = await fetch(`${baseUrl}/api/users`, { headers: { Cookie: staffCookie } });
+  assert.equal(staffUsersRes.status, 403);
+  const staffReportsRes = await fetch(`${baseUrl}/api/reports/inventory`, { headers: { Cookie: staffCookie } });
+  assert.equal(staffReportsRes.status, 403);
 });
